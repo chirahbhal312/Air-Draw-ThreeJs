@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Canvas to AR (Touch Drawing)</title>
+  <title>AR Drawing from Canvas</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
@@ -11,14 +11,17 @@
       font-family: sans-serif;
     }
     #drawCanvas {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 10;
-  touch-action: none;
-}
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 10;
+      touch-action: none;
+    }
+    #drawCanvas.hidden {
+      display: none;
+    }
 
     .controls {
       position: fixed;
@@ -32,7 +35,7 @@
   </style>
 </head>
 <body>
-  <canvas id="drawCanvas" width="400" height="400"></canvas>
+  <canvas id="drawCanvas"></canvas>
   <div class="controls">
     <label>
       Color: <input type="color" id="brushColor" value="#000000" />
@@ -52,7 +55,6 @@
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js';
     import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/webxr/ARButton.js';
 
-    // Drawing canvas
     const canvas = document.getElementById('drawCanvas');
     const ctx = canvas.getContext('2d');
     const brushSize = document.getElementById('brushSize');
@@ -60,7 +62,9 @@
     let drawing = false;
 
     canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+    canvas.height = window.innerHeight;
+
+    const texture = new THREE.CanvasTexture(canvas);
 
     function getTouchPos(e) {
       const rect = canvas.getBoundingClientRect();
@@ -92,14 +96,16 @@ canvas.height = window.innerHeight;
 
     canvas.addEventListener('touchend', () => {
       drawing = false;
+      canvas.classList.add('hidden'); // Hide canvas after drawing
     });
 
     function clearCanvas() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.classList.remove('hidden'); // Show canvas again
       texture.needsUpdate = true;
     }
 
-    // THREE + WebXR AR
+    // AR Setup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera();
 
@@ -110,12 +116,10 @@ canvas.height = window.innerHeight;
     document.body.appendChild(renderer.domElement);
 
     document.body.appendChild(ARButton.createButton(renderer, {
-  requiredFeatures: ['hit-test', 'dom-overlay'],
-  domOverlay: { root: document.body }
-}));
+      requiredFeatures: ['hit-test', 'dom-overlay'],
+      domOverlay: { root: document.body }
+    }));
 
-
-    const texture = new THREE.CanvasTexture(canvas);
     const geometry = new THREE.PlaneGeometry(0.3, 0.3);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
     const plane = new THREE.Mesh(geometry, material);
