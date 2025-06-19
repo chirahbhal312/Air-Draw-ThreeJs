@@ -2,133 +2,198 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>AR Drawing from Canvas</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Advanced Paint App</title>
   <style>
-    body {
+    body, html {
       margin: 0;
-      overflow: hidden;
-      font-family: sans-serif;
+      padding: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
     }
-    #drawCanvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      z-index: 10;
+    #toolbar {
+      background: #444;
+      color: #fff;
+      padding: 8px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+    }
+    #toolbar select,
+    #toolbar button,
+    #toolbar input[type="color"] {
+      font-size: 1rem;
+      padding: 6px 8px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #toolbar button {
+      background: #666;
+      color: #fff;
+    }
+    #toolbar button.active {
+      box-shadow: inset 0 0 4px #000;
+    }
+    canvas {
+      flex: 1;
       touch-action: none;
-    }
-    #drawCanvas.hidden {
-      display: none;
-    }
-
-    .controls {
-      position: fixed;
-      top: 420px;
-      left: 10px;
-      background: rgba(255,255,255,0.8);
-      padding: 10px;
-      border-radius: 8px;
-      z-index: 10;
     }
   </style>
 </head>
 <body>
-  <canvas id="drawCanvas"></canvas>
-  <div class="controls">
+  <div id="toolbar">
+    <label><input type="color" id="colorPicker" value="#000000" /></label>
     <label>
-      Color: <input type="color" id="brushColor" value="#000000" />
-    </label>
-    <label>
-      Size:
+      Brush Size:
       <select id="brushSize">
-        <option value="2">Thin</option>
-        <option value="4">Medium</option>
-        <option value="8">Thick</option>
+        <option>4</option><option>8</option><option>12</option>
+        <option>20</option><option>30</option><option>50</option>
       </select>
     </label>
-    <button onclick="clearCanvas()">Clear</button>
+    <label>
+      Brush Type:
+      <select id="brushType">
+        <option value="round">Round</option>
+        <option value="square">Square</option>
+        <option value="calligraphy">Calligraphy</option>
+      </select>
+    </label>
+    <button id="shapeLine">Line</button>
+    <button id="shapeRect">Rectangle</button>
+    <button id="shapeCircle">Circle</button>
+    <button id="eraser">Eraser</button>
+    <button id="undo">Undo</button>
+    <button id="clear">Clear</button>
+    <button id="save">Save</button>
   </div>
-
-  <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.module.js';
-    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.150.1/examples/jsm/webxr/ARButton.js';
-
-    const canvas = document.getElementById('drawCanvas');
+  <canvas id="canvas"></canvas>
+  <script>
+    const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const toolbar = document.getElementById('toolbar');
+    const colorPicker = document.getElementById('colorPicker');
     const brushSize = document.getElementById('brushSize');
-    const brushColor = document.getElementById('brushColor');
+    const brushType = document.getElementById('brushType');
+    const shapeLine = document.getElementById('shapeLine');
+    const shapeRect = document.getElementById('shapeRect');
+    const shapeCircle = document.getElementById('shapeCircle');
+    const eraserBtn = document.getElementById('eraser');
+    const undoBtn = document.getElementById('undo');
+    const clearBtn = document.getElementById('clear');
+    const saveBtn = document.getElementById('save');
+
+    let currentTool = 'brush';
     let drawing = false;
+    let startX, startY;
+    const actions = [];
 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    function resize() {
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight - toolbar.offsetHeight;
+      ctx.putImageData(imgData, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+    resize();
 
-    const texture = new THREE.CanvasTexture(canvas);
+    function applySettings() {
+      ctx.strokeStyle = (currentTool === 'eraser') ? '#fff' : colorPicker.value;
+      ctx.lineWidth = brushSize.value;
+      ctx.lineCap = brushType.value === 'round' ? 'round' : 'butt';
+      ctx.lineJoin = 'round';
+    }
 
-    function getTouchPos(e) {
+    colorPicker.addEventListener('change', applySettings);
+    brushSize.addEventListener('change', applySettings);
+    brushType.addEventListener('change', applySettings);
+
+    function setActive(btn) {
+      [...toolbar.querySelectorAll('button')].forEach(b => b.classList.remove('active'));
+      btn && btn.classList.add('active');
+    }
+
+    shapeLine.onclick = () => (currentTool = 'line', setActive(shapeLine));
+    shapeRect.onclick = () => (currentTool = 'rect', setActive(shapeRect));
+    shapeCircle.onclick = () => (currentTool = 'circle', setActive(shapeCircle));
+    eraserBtn.onclick = () => (currentTool = 'eraser', setActive(eraserBtn));
+    clearBtn.onclick = () => (ctx.clearRect(0,0,canvas.width,canvas.height), actions.length = 0);
+    undoBtn.onclick = () => {
+      if (!actions.length) return;
+      actions.pop();
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      actions.forEach(img => ctx.putImageData(img, 0,0));
+    };
+    saveBtn.onclick = () => {
+      const link = document.createElement('a');
+      link.download = 'drawing.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    };
+
+    function saveState() {
+      actions.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      if (actions.length > 20) actions.shift();
+    }
+
+    function getPos(e) {
       const rect = canvas.getBoundingClientRect();
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top
-      };
+      const pt = e.touches ? e.touches[0] : e;
+      return { x: pt.clientX - rect.left, y: pt.clientY - rect.top };
     }
 
-    canvas.addEventListener('touchstart', (e) => {
+    function start(e) {
       e.preventDefault();
+      saveState();
       drawing = true;
-      const pos = getTouchPos(e);
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      if (!drawing) return;
-      e.preventDefault();
-      const pos = getTouchPos(e);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.strokeStyle = brushColor.value;
-      ctx.lineWidth = parseInt(brushSize.value, 10);
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      texture.needsUpdate = true;
-    });
-
-    canvas.addEventListener('touchend', () => {
-      drawing = false;
-      canvas.classList.add('hidden'); // Hide canvas after drawing
-    });
-
-    function clearCanvas() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      canvas.classList.remove('hidden'); // Show canvas again
-      texture.needsUpdate = true;
+      const pos = getPos(e);
+      startX = pos.x; startY = pos.y;
+      if (currentTool === 'brush' || currentTool === 'eraser') {
+        applySettings();
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+      }
     }
 
-    // AR Setup
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera();
+    function draw(e) {
+      if (!drawing) return;
+      const pos = getPos(e);
+      if (currentTool === 'brush' || currentTool === 'eraser') {
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+      } else {
+        ctx.putImageData(actions[actions.length - 1], 0, 0);
+        applySettings();
+        ctx.beginPath();
+        if (currentTool === 'line') {
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(pos.x, pos.y);
+        }
+        if (currentTool === 'rect') {
+          ctx.rect(startX, startY, pos.x - startX, pos.y - startY);
+        }
+        if (currentTool === 'circle') {
+          const r = Math.hypot(pos.x - startX, pos.y - startY);
+          ctx.arc(startX, startY, r, 0, Math.PI * 2);
+        }
+        ctx.stroke();
+      }
+    }
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+    function end(e) {
+      if (!drawing) return;
+      drawing = false;
+      if (currentTool !== 'brush' && currentTool !== 'eraser') {
+        draw(e);
+      }
+      ctx.closePath();
+    }
 
-    document.body.appendChild(ARButton.createButton(renderer, {
-      requiredFeatures: ['hit-test', 'dom-overlay'],
-      domOverlay: { root: document.body }
-    }));
-
-    const geometry = new THREE.PlaneGeometry(0.3, 0.3);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-    const plane = new THREE.Mesh(geometry, material);
-    plane.position.set(0, 0, -0.5);
-    scene.add(plane);
-
-    renderer.setAnimationLoop(() => {
-      renderer.render(scene, camera);
-    });
+    ['mousedown','touchstart'].forEach(evt => canvas.addEventListener(evt, start));
+    ['mousemove','touchmove'].forEach(evt => canvas.addEventListener(evt, draw));
+    ['mouseup','mouseleave','touchend'].forEach(evt => canvas.addEventListener(evt, end));
   </script>
 </body>
 </html>
